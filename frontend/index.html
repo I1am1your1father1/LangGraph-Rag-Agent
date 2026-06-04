@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>LangGraph RAG Agent</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #f7f7f7;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    #chat-box {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 400px;
+      margin-bottom: 16px;
+      overflow-y: auto;
+    }
+
+    .message {
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+
+    .user {
+      color: #0b63ce;
+      font-weight: bold;
+    }
+
+    .assistant {
+      color: #222;
+      white-space: pre-wrap;
+    }
+
+    textarea {
+      width: 100%;
+      height: 90px;
+      padding: 10px;
+      box-sizing: border-box;
+      font-size: 15px;
+    }
+
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .citations {
+      margin-top: 8px;
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>LangGraph RAG Agent</h1>
+
+  <div id="chat-box"></div>
+
+  <textarea id="question" placeholder="请输入你的问题，例如：文档中 LangGraph 是做什么的？"></textarea>
+  <br />
+  <button onclick="sendMessage()">发送</button>
+
+  <script>
+    async function sendMessage() {
+      const questionInput = document.getElementById("question");
+      const chatBox = document.getElementById("chat-box");
+      const question = questionInput.value.trim();
+
+      if (!question) {
+        alert("请输入问题");
+        return;
+      }
+
+      chatBox.innerHTML += `
+        <div class="message">
+          <div class="user">用户：</div>
+          <div>${question}</div>
+        </div>
+      `;
+
+      questionInput.value = "";
+
+      const assistantId = "assistant-" + Date.now();
+
+      chatBox.innerHTML += `
+        <div class="message">
+          <div class="user">助手：</div>
+          <div id="${assistantId}" class="assistant">正在思考...</div>
+        </div>
+      `;
+
+      try {
+        const response = await fetch("/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            user_id: "demo",
+            question: question
+          })
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          document.getElementById(assistantId).innerText = "请求失败：" + text;
+          return;
+        }
+
+        const data = await response.json();
+
+        let citationsHtml = "";
+        if (data.citations && data.citations.length > 0) {
+          citationsHtml = `
+            <div class="citations">
+              引用来源：${data.citations.map(c => `[${c.index}] ${c.source_filename}`).join("；")}
+            </div>
+          `;
+        }
+
+        document.getElementById(assistantId).innerHTML =
+          (data.answer || "无回答") + citationsHtml;
+
+      } catch (err) {
+        document.getElementById(assistantId).innerText = "请求出错：" + err;
+      }
+
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+  </script>
+</body>
+</html>

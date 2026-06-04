@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+pydantic
+
+langgraph
+langchain
+langchain-openai
+langchain-chroma
+langchain-community
+
+chromadb
+rank-bm25
+PyJWT
