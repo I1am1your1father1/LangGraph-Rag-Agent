@@ -61,18 +61,119 @@
       color: #666;
       font-size: 13px;
     }
+
+    #upload-box {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    #upload-box h3 {
+      margin-top: 0;
+    }
+
+    #upload-box input[type="text"] {
+      width: 160px;
+      padding: 8px;
+      margin-right: 8px;
+      margin-bottom: 10px;
+    }
+
+    #upload-box input[type="file"] {
+      display: block;
+      margin: 8px 0;
+    }
+
+    #upload-status,
+    #auth-status {
+      margin-top: 10px;
+      color: #666;
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
   <h1>LangGraph RAG Agent</h1>
+  <div id="upload-box">
+    <h3>文档上传</h3>
+
+    <input id="user-id" type="text" value="demo" placeholder="user_id" />
+    <input id="kb-id" type="text" value="default" placeholder="kb_id" />
+    <button onclick="refreshToken()">获取/刷新 Token</button>
+    <div id="auth-status"></div>
+
+    <input
+      id="file-input"
+      type="file"
+      accept=".txt,.md,.pdf,.docx"
+    />
+
+    <button onclick="uploadDocument()">上传文档</button>
+
+    <div id="upload-status"></div>
+  </div>
 
   <div id="chat-box"></div>
 
-  <textarea id="question" placeholder="请输入你的问题，例如：文档中 LangGraph 是做什么的？"></textarea>
+  <textarea id="question" placeholder="请输入你的问题，例如：文档中 LangGraph 是做什么的？或者：帮我计算 1 + 2 * 3"></textarea>
   <br />
   <button onclick="sendMessage()">发送</button>
 
   <script>
+    function currentUserId() {
+      return document.getElementById("user-id").value.trim() || "demo";
+    }
+
+    function currentKbId() {
+      return document.getElementById("kb-id").value.trim() || "default";
+    }
+
+    async function getAccessToken() {
+      const userId = currentUserId();
+      const cachedKey = "rag_agent_token_" + userId;
+      const cached = localStorage.getItem(cachedKey);
+
+      if (cached) {
+        return cached;
+      }
+
+      const response = await fetch("/auth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          expires_minutes: 60 * 24
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const data = await response.json();
+      localStorage.setItem(cachedKey, data.access_token);
+      return data.access_token;
+    }
+
+    async function refreshToken() {
+      const userId = currentUserId();
+      const cachedKey = "rag_agent_token_" + userId;
+      localStorage.removeItem(cachedKey);
+
+      const authStatus = document.getElementById("auth-status");
+      try {
+        await getAccessToken();
+        authStatus.innerText = "Token 已刷新，当前用户：" + userId;
+      } catch (err) {
+        authStatus.innerText = "Token 获取失败：" + err;
+      }
+    }
+
     async function sendMessage() {
       const questionInput = document.getElementById("question");
       const chatBox = document.getElementById("chat-box");
@@ -98,46 +199,132 @@
         <div class="message">
           <div class="user">助手：</div>
           <div id="${assistantId}" class="assistant">正在思考...</div>
+          <div id="${assistantId}-citations" class="citations"></div>
         </div>
       `;
 
+      const answerBox = document.getElementById(assistantId);
+      const citationsBox = document.getElementById(`${assistantId}-citations`);
+
+      let isFirstToken = true;
+
       try {
-        const response = await fetch("/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            user_id: "demo",
-            question: question
-          })
-        });
+        const token = await getAccessToken();
+        const kbId = currentKbId();
 
-        if (!response.ok) {
-          const text = await response.text();
-          document.getElementById(assistantId).innerText = "请求失败：" + text;
-          return;
-        }
+        // EventSource 不能像 fetch 一样设置 Authorization header，
+        // 所以这里把同一个 JWT 放到 access_token 查询参数里。
+        const url =
+          `/chat/stream?access_token=${encodeURIComponent(token)}` +
+          `&kb_id=${encodeURIComponent(kbId)}` +
+          `&question=${encodeURIComponent(question)}`;
 
-        const data = await response.json();
+        const eventSource = new EventSource(url);
 
-        let citationsHtml = "";
-        if (data.citations && data.citations.length > 0) {
-          citationsHtml = `
-            <div class="citations">
-              引用来源：${data.citations.map(c => `[${c.index}] ${c.source_filename}`).join("；")}
-            </div>
-          `;
-        }
+        eventSource.onmessage = function (event) {
+          const data = JSON.parse(event.data);
 
-        document.getElementById(assistantId).innerHTML =
-          (data.answer || "无回答") + citationsHtml;
+          if (data.type === "token") {
+            if (isFirstToken) {
+              answerBox.innerText = "";
+              isFirstToken = false;
+            }
+
+            answerBox.innerText += data.content;
+            chatBox.scrollTop = chatBox.scrollHeight;
+          }
+
+          if (data.type === "done") {
+            let citationsHtml = "";
+
+            if (data.citations && data.citations.length > 0) {
+              citationsHtml = `
+                <div class="citations">
+                  引用来源：${data.citations.map(c =>
+                    `[${c.index}] ${c.source_filename}，kb=${c.kb_id}，chunk=${c.chunk_index}`
+                  ).join("；")}
+                </div>
+              `;
+            }
+
+            citationsBox.innerHTML = citationsHtml;
+            eventSource.close();
+          }
+
+          if (data.type === "error") {
+            answerBox.innerText = "请求失败：" + data.content;
+            eventSource.close();
+          }
+        };
+
+        eventSource.onerror = function () {
+          if (isFirstToken) {
+            answerBox.innerText = "连接中断";
+          } else {
+            answerBox.innerText += "\n连接中断";
+          }
+
+          eventSource.close();
+        };
 
       } catch (err) {
-        document.getElementById(assistantId).innerText = "请求出错：" + err;
+        answerBox.innerText = "请求出错：" + err;
       }
 
       chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function uploadDocument() {
+      const fileInput = document.getElementById("file-input");
+      const uploadStatus = document.getElementById("upload-status");
+      const kbId = currentKbId();
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        uploadStatus.innerText = "请先选择文件";
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append("file", file);
+
+      uploadStatus.innerText = "正在上传并处理文档...";
+
+      try {
+        const token = await getAccessToken();
+        const response = await fetch(
+          `/upload?kb_id=${encodeURIComponent(kbId)}`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": "Bearer " + token
+            },
+            body: formData,
+          }
+        );
+
+        const text = await response.text();
+
+        if (!response.ok) {
+          uploadStatus.innerText = "上传失败：" + text;
+          return;
+        }
+
+        const data = JSON.parse(text);
+
+        uploadStatus.innerText =
+          "上传成功\n" +
+          "用户ID：" + data.user_id + "\n" +
+          "知识库ID：" + data.kb_id + "\n" +
+          "文件名：" + data.filename + "\n" +
+          "文档ID：" + data.document_id + "\n" +
+          "文件类型：" + data.file_type + "\n" +
+          "切片方式：" + data.splitter_type + "\n" +
+          "切片数量：" + data.chunk_count;
+
+      } catch (err) {
+        uploadStatus.innerText = "上传出错：" + err;
+      }
     }
   </script>
 </body>

@@ -4,13 +4,13 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from backend.config import CHROMA_DIR
+from backend.config import CHROMA_DIR, EMBEDDING_MODEL
 
 
 class ChromaService:
     def __init__(self) -> None:
         self.embeddings = HuggingFaceEmbeddings(
-            model_name="/root/autodl-tmp/huggingface/hub/models--BAAI--bge-small-zh-v1.5/snapshots/7999e1d3359715c523056ef9478215996d62a620",
+            model_name=EMBEDDING_MODEL,
             model_kwargs={"device": "cuda"},
             encode_kwargs={"normalize_embeddings": True},
         )
@@ -51,6 +51,12 @@ class ChromaService:
         kb_id: str = "default",
         top_k: int = 5,
     ) -> list[dict[str, Any]]:
+        """
+        Chroma 向量检索入口。
+
+        真正参与相似度计算的是 query embedding 和 Chroma 中保存的 chunk embedding；
+        user_id/kb_id 是元数据过滤条件，用来保证不同用户、不同知识库之间隔离。
+        """
         results = self.vectorstore.similarity_search_with_score(
             query,
             k=top_k,
@@ -70,6 +76,8 @@ class ChromaService:
                     "content": doc.page_content,
                     "chunk_id": doc.metadata.get("chunk_id"),
                     "document_id": doc.metadata.get("document_id"),
+                    "user_id": doc.metadata.get("user_id"),
+                    "kb_id": doc.metadata.get("kb_id"),
                     "source_filename": doc.metadata.get("source_filename"),
                     "chunk_index": doc.metadata.get("chunk_index"),
                     "score": float(score),

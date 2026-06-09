@@ -13,7 +13,7 @@ load_dotenv(ROOT_DIR / ".env")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "/root/autodl-tmp/models/bge-m3")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
 JWT_ALGORITHM = "HS256"         # RS256

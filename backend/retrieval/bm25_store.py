@@ -9,9 +9,10 @@ from backend.db.sqlite import list_chunks_for_user
 def search_bm25(
     query: str,
     user_id: str,
+    kb_id: str = "default",
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
-    rows = list_chunks_for_user(user_id)
+    rows = list_chunks_for_user(user_id=user_id, kb_id=kb_id)
 
     if not rows:
         return []
@@ -23,6 +24,7 @@ def search_bm25(
                 "chunk_id": row["id"],
                 "document_id": row["document_id"],
                 "user_id": row["user_id"],
+                "kb_id": row["kb_id"],
                 "source_filename": row["source_filename"],
                 "chunk_index": row["chunk_index"],
             },
@@ -40,6 +42,8 @@ def search_bm25(
             "content": doc.page_content,
             "chunk_id": doc.metadata.get("chunk_id"),
             "document_id": doc.metadata.get("document_id"),
+            "user_id": doc.metadata.get("user_id"),
+            "kb_id": doc.metadata.get("kb_id"),
             "source_filename": doc.metadata.get("source_filename"),
             "chunk_index": doc.metadata.get("chunk_index"),
             "score": None,

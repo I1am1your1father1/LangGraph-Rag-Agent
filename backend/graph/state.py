@@ -5,6 +5,8 @@ class RetrievedDoc(TypedDict, total=False):
     content: str
     chunk_id: str
     document_id: str
+    user_id: str
+    kb_id: str
     source_filename: str
     chunk_index: int
     score: float | None
@@ -13,11 +15,13 @@ class RetrievedDoc(TypedDict, total=False):
 
 class GraphState(TypedDict, total=False):
     user_id: str
+    kb_id: str
     session_id: str
     question: str
 
     rewritten_query: str
     route: str
+    route_reason: str
 
     tool_call_count: int
     tool_name: str
@@ -34,4 +38,5 @@ class GraphState(TypedDict, total=False):
     answer: str
     citation_check: dict[str, Any]
 
+    latency_ms: float | None
     error: str | None

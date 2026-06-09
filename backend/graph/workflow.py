@@ -1,47 +1,38 @@
 from typing import Literal
 
-from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import InMemorySaver
-from backend.graph.state import GraphState
+from langgraph.graph import END, START, StateGraph
+
 from backend.graph.nodes import (
     classify_question,
-    rewrite_query,
-    retrieve_chroma,
-    retrieve_bm25,
-    merge_results,
     generate_answer,
-    validate_answer_node,
+    merge_results,
+    retrieve_bm25,
+    retrieve_chroma,
+    rewrite_query,
     save_message_node,
     tool_node,
+    validate_answer_node,
 )
+from backend.graph.state import GraphState
 
 
 def route_after_classify(state: GraphState) -> Literal["rag", "chat", "tool"]:
-    route = state.get("route")
+    route = state.get("route", "chat")
 
-    if route == "rag":
-        return "rag"
-
-    if route == "tool":
-        return "tool"
+    if route in ["rag", "chat", "tool"]:
+        return route
 
     return "chat"
 
 
-def should_continue_tool_loop(state: GraphState) -> Literal["tool", "final"]:
-    if state.get("tool_call_count", 0) >= 3:
-        return "final"
-
-    if state.get("tool_name"):
-        return "tool"
-
-    return "final"
-
-
 def build_graph():
     """
-    Version 1.0
-    Simply execute in order 
+    LangGraph 主工作流。
+
+    chat 分支：classify -> generate -> validate -> save
+    rag 分支：classify -> rewrite -> chroma -> bm25 -> merge -> generate -> validate -> save
+    tool 分支：classify -> tool_node -> generate -> validate -> save
     """
     graph = StateGraph(GraphState)
 
